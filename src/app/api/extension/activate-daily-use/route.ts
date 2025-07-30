@@ -103,13 +103,42 @@ export async function POST(request: NextRequest) {
       updatedAt: now
     });
 
-    // Update user's subscription status to 'limited' for daily use
-    const userRef = adminDb.collection('users').doc(userId);
-    await userRef.update({
-      subscriptionStatus: 'limited',
-      lastDailyActivation: now,
-      updatedAt: now
-    });
+    // 🔧 CRITICAL FIX: Check user's actual subscription status before updating
+    let actualSubscriptionStatus = 'limited'; // Default for new users
+    
+    // FIRST: Check premium_users collection (primary source of truth)
+    try {
+      const premiumUserDoc = await adminDb.collection('premium_users').doc(userId).get();
+      if (premiumUserDoc.exists()) {
+        const premiumData = premiumUserDoc.data();
+        actualSubscriptionStatus = premiumData?.subscriptionStatus || 'premium';
+        console.log('✅ Found premium user, preserving status:', actualSubscriptionStatus);
+        
+        // Update premium_users collection instead
+        await premiumUserDoc.ref.update({
+          'metadata.lastDailyActivation': now,
+          'metadata.updatedAt': now
+        });
+      } else {
+        // FALLBACK: Update legacy users collection only if not a premium user
+        const userRef = adminDb.collection('users').doc(userId);
+        await userRef.update({
+          subscriptionStatus: 'limited',
+          lastDailyActivation: now,
+          updatedAt: now
+        });
+        console.log('📄 Updated legacy user collection with limited status');
+      }
+    } catch (error) {
+      console.warn('Error checking premium status, defaulting to limited:', error);
+      // Fallback to updating users collection
+      const userRef = adminDb.collection('users').doc(userId);
+      await userRef.update({
+        subscriptionStatus: 'limited',
+        lastDailyActivation: now,
+        updatedAt: now
+      });
+    }
 
     console.log(`✅ Daily use activated for user ${userId} on device ${deviceFingerprint}`);
 
@@ -130,12 +159,12 @@ export async function POST(request: NextRequest) {
                      request.headers.get('x-real-ip') || 
                      'unknown';
     
-    // Create session document
+    // Create session document with actual subscription status
     await sessionRef.set({
       sessionId,
       userId,
       email: userEmail,
-      subscriptionStatus: 'limited', // Daily use = limited subscription
+      subscriptionStatus: actualSubscriptionStatus, // Use actual status (premium/limited)
       deviceFingerprint,
       ipAddress: clientIP,
       userAgent: request.headers.get('user-agent') || 'unknown',
@@ -150,13 +179,13 @@ export async function POST(request: NextRequest) {
       dailyActivationTime: now
     });
 
-    // Generate JWT token for the extension
+    // Generate JWT token for the extension with actual subscription status
     const jwtToken = generateSessionJWT({
       sessionId,
       userId,
       deviceFingerprint,
       ipAddress: clientIP,
-      subscriptionStatus: 'limited'
+      subscriptionStatus: actualSubscriptionStatus // Use actual status
     }, 7200000); // 2 hours expiration
 
     console.log(`🎫 Created JWT session ${sessionId} for daily activation`);
@@ -172,7 +201,7 @@ export async function POST(request: NextRequest) {
         sessionId,
         token: jwtToken,
         expiresIn: 7200, // 2 hours in seconds
-        subscriptionStatus: 'limited',
+        subscriptionStatus: actualSubscriptionStatus, // Use actual subscription status
         heartbeatUrl: `${request.headers.get('origin') || 'https://webtutorialai.com'}/api/v2/session/heartbeat`
       },
       debug: {

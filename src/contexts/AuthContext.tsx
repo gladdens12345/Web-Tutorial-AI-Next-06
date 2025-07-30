@@ -40,9 +40,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (user) {
         // Fetch user subscription status from Firestore
         try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
+          // FIRST: Check premium_users collection (primary source of truth)
+          let userData = null;
+          let isPremiumUser = false;
+          
+          const premiumUserDoc = await getDoc(doc(db, 'premium_users', user.uid));
+          if (premiumUserDoc.exists()) {
+            userData = premiumUserDoc.data();
+            isPremiumUser = true;
+            console.log('✅ Found user in premium_users collection:', userData.subscriptionStatus);
+          } else {
+            // FALLBACK: Check legacy users collection
+            const userDoc = await getDoc(doc(db, 'users', user.uid));
+            if (userDoc.exists()) {
+              userData = userDoc.data();
+              console.log('📄 Found user in legacy users collection:', userData.subscriptionStatus);
+            }
+          }
+
+          if (userData) {
             setSubscription({
               status: userData.subscriptionStatus || 'free',
               startDate: userData.subscriptionStartDate?.toDate(),
@@ -50,8 +66,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               stripeCustomerId: userData.stripeCustomerId,
               stripeSubscriptionId: userData.stripeSubscriptionId,
             });
+
+            // 🔧 CRITICAL: Notify extension about authentication status
+            console.log('🔐 Dispatching auth success event for extension with status:', userData.subscriptionStatus);
+            
+            const authEventData = {
+              userId: user.uid,
+              email: user.email,
+              subscriptionStatus: userData.subscriptionStatus,
+              isPremium: userData.subscriptionStatus === 'premium',
+              timestamp: new Date().toISOString()
+            };
+
+            // Dispatch event for extension to detect
+            window.dispatchEvent(new CustomEvent('webTutorialAuthSuccess', {
+              detail: authEventData
+            }));
+
+            // Also store in localStorage as backup for extension detection
+            localStorage.setItem('webTutorialAuth', JSON.stringify({
+              ...authEventData,
+              timestamp: Date.now()
+            }));
+
           } else {
-            // Create new user document with free status
+            // Create new user document with free status in users collection
             const defaultSubscription: SubscriptionStatus = {
               status: 'free',
               startDate: new Date(),

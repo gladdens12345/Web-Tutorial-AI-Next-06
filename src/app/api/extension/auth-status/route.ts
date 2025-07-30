@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebase-admin';
-import { getAuth } from 'firebase-admin/auth';
+import { UserService } from '@/lib/services/user-service';
 
 // Force dynamic rendering to prevent static caching
 export const dynamic = 'force-dynamic';
@@ -47,102 +46,25 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
 
-    let userData;
-    let customClaims = null;
+    // Use unified UserService for all user lookup operations
+    let userData = null;
 
-    // FIRST: Check premium_users collection (primary source of truth for subscriptions)
-    if (userId || userEmail) {
-      try {
-        let premiumUserDoc;
-
-        // Try to find by userId first
-        if (userId) {
-          premiumUserDoc = await adminDb.collection('premium_users').doc(userId).get();
-        }
-
-        // If not found by userId and we have email, try to find by email
-        if (!premiumUserDoc?.exists && userEmail) {
-          const emailQuery = await adminDb.collection('premium_users')
-            .where('email', '==', userEmail)
-            .limit(1)
-            .get();
-          
-          if (!emailQuery.empty) {
-            premiumUserDoc = emailQuery.docs[0];
-          }
-        }
-
-        if (premiumUserDoc?.exists) {
-          const premiumUserData = premiumUserDoc.data();
-          console.log('✅ Found user in premium_users collection:', premiumUserData.userId);
-          
+    try {
+      if (userId) {
+        userData = await UserService.getUserById(userId);
+        if (userData) {
           // Update last access time
-          await premiumUserDoc.ref.update({
-            'metadata.lastAccess': new Date(),
-            'metadata.updatedAt': new Date()
-          });
-
-          userData = {
-            subscriptionStatus: premiumUserData.subscriptionStatus,
-            stripeCustomerId: premiumUserData.stripeCustomerId,
-            stripeSubscriptionId: premiumUserData.stripeSubscriptionId,
-            subscriptionStartDate: premiumUserData.subscriptionStartDate,
-            subscriptionEndDate: premiumUserData.subscriptionEndDate,
-            email: premiumUserData.email
-          };
+          await UserService.updateLastAccess(userId);
         }
-      } catch (error) {
-        console.warn('Failed to check premium_users collection:', error);
-      }
-    }
-
-    // SECOND: Check Firebase custom claims (fallback for existing users)
-    if (!userData && userId) {
-      try {
-        const auth = getAuth();
-        const userRecord = await auth.getUser(userId);
-        customClaims = userRecord.customClaims || {};
-        
-        // Support both old Stripe claims and new Firebase Extension claims
-        if (customClaims.stripeRole === 'premium' || customClaims.premium === true || customClaims.subscriptionStatus === 'premium') {
-          console.log('✅ User has premium custom claims (Firebase Extension or legacy Stripe)');
-          // If user has premium claims, use those
-          userData = {
-            subscriptionStatus: 'premium',
-            stripeCustomerId: customClaims.stripeCustomerId,
-            stripeSubscriptionId: customClaims.stripeSubscriptionId,
-            subscriptionStartDate: customClaims.subscriptionStartDate ? new Date(customClaims.subscriptionStartDate * 1000) : null,
-            subscriptionEndDate: customClaims.subscriptionEndDate ? new Date(customClaims.subscriptionEndDate * 1000) : null,
-            email: userRecord.email || userEmail
-          };
+      } else if (userEmail) {
+        userData = await UserService.getUserByEmail(userEmail);
+        if (userData) {
+          // Update last access time
+          await UserService.updateLastAccess(userData.userId);
         }
-      } catch (error) {
-        console.warn('Failed to get custom claims:', error);
       }
-    }
-
-    // THIRD: Check legacy Firestore users collection if no premium status found
-    if (!userData && userId) {
-      try {
-        const userDoc = await adminDb.collection('users').doc(userId).get();
-        if (userDoc.exists) {
-          userData = userDoc.data();
-        }
-      } catch (error) {
-        console.warn('Failed to lookup user by ID:', error);
-      }
-    }
-    
-    // FOURTH: Fallback to email lookup in legacy users collection
-    if (!userData && userEmail) {
-      try {
-        const querySnapshot = await adminDb.collection('users').where('email', '==', userEmail).limit(1).get();
-        if (!querySnapshot.empty) {
-          userData = querySnapshot.docs[0].data();
-        }
-      } catch (error) {
-        console.warn('Failed to lookup user by email:', error);
-      }
+    } catch (error) {
+      console.warn('Failed to lookup user:', error);
     }
     
     if (!userData) {
