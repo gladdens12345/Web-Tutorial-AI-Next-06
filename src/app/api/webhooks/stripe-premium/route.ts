@@ -401,11 +401,34 @@ async function updatePremiumUserRecord(userId: string, updates: any) {
   if (updates.subscriptionStatus) {
     try {
       const auth = getAuth();
-      await auth.setCustomUserClaims(userId, {
-        subscriptionStatus: updates.subscriptionStatus,
-        premium: updates.subscriptionStatus === 'premium',
-        stripeRole: updates.subscriptionStatus === 'premium' ? 'premium' : null
-      });
+      
+      if (updates.subscriptionStatus === 'premium') {
+        // Set premium claims
+        await auth.setCustomUserClaims(userId, {
+          subscriptionStatus: 'premium',
+          premium: true,
+          stripeRole: 'premium'
+        });
+        console.log('✅ Set premium custom claims for user:', userId);
+      } else {
+        // CRITICAL FIX: Completely clear premium-related custom claims
+        // Get current claims first
+        const userRecord = await auth.getUser(userId);
+        const currentClaims = userRecord.customClaims || {};
+        
+        // Remove premium-related claims while preserving others
+        const cleanedClaims = { ...currentClaims };
+        delete cleanedClaims.premium;
+        delete cleanedClaims.stripeRole;
+        delete cleanedClaims.subscriptionStatus;
+        delete cleanedClaims.stripeCustomerId;
+        delete cleanedClaims.stripeSubscriptionId;
+        delete cleanedClaims.subscriptionStartDate;
+        delete cleanedClaims.subscriptionEndDate;
+        
+        await auth.setCustomUserClaims(userId, cleanedClaims);
+        console.log('✅ Cleared premium custom claims for user:', userId);
+      }
     } catch (error) {
       console.warn('⚠️ Failed to update custom claims:', error);
     }

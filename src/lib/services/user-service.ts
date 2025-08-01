@@ -43,13 +43,16 @@ export class UserService {
       createIfNotExists = false
     } = options;
 
-    // FIRST: Check premium_users collection (primary source of truth)
+    // FIRST: Check premium_users collection (AUTHORITATIVE source of truth)
+    let premiumUserExists = false;
     try {
       const premiumUserDoc = await adminDb.collection('premium_users').doc(userId).get();
       if (premiumUserDoc.exists) {
+        premiumUserExists = true;
         const data = premiumUserDoc.data();
-        console.log('✅ Found user in premium_users collection:', data?.userId);
+        console.log('✅ Found user in premium_users collection - AUTHORITATIVE:', data?.userId, 'Status:', data?.subscriptionStatus);
         
+        // Return immediately - premium_users collection is authoritative
         return {
           userId: data?.userId || userId,
           email: data?.email,
@@ -69,8 +72,10 @@ export class UserService {
       console.warn('Failed to check premium_users collection:', error);
     }
 
-    // SECOND: Check Firebase custom claims (fallback for existing users)
-    if (includeCustomClaims) {
+    // SECOND: Check Firebase custom claims (fallback ONLY if not found in premium_users)
+    // CRITICAL FIX: Don't check custom claims if user exists in premium_users
+    // This prevents stale custom claims from overriding authoritative premium_users data
+    if (includeCustomClaims && !premiumUserExists) {
       try {
         const auth = getAuth();
         const userRecord = await auth.getUser(userId);
@@ -79,7 +84,7 @@ export class UserService {
         if (customClaims.stripeRole === 'premium' || 
             customClaims.premium === true || 
             customClaims.subscriptionStatus === 'premium') {
-          console.log('✅ User has premium custom claims');
+          console.log('✅ User has premium custom claims (no premium_users record found)');
           
           return {
             userId: userId,
@@ -97,6 +102,8 @@ export class UserService {
       } catch (error) {
         console.warn('Failed to get custom claims:', error);
       }
+    } else if (premiumUserExists) {
+      console.log('🔒 Skipping custom claims check - premium_users collection is authoritative');
     }
 
     // THIRD: Check legacy users collection
