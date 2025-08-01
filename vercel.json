@@ -1,17 +1,22 @@
 {
   "functions": {
-    "src/app/api/v2/session/*/route.ts": {
+    "src/app/api/v2/session/start/route.ts": {
+      "maxDuration": 30
+    },
+    "src/app/api/v2/session/heartbeat/route.ts": {
       "maxDuration": 30
     },
     "src/app/api/extension/*/route.ts": {
       "maxDuration": 30
+    },
+    "src/app/api/webhooks/*/route.ts": {
+      "maxDuration": 30
+    },
+    "src/app/api/test/*/route.ts": {
+      "maxDuration": 30
     }
   },
   "crons": [
-    {
-      "path": "/api/cron/check-trial-expiration",
-      "schedule": "0 */6 * * *"
-    },
     {
       "path": "/api/cron/cleanup-sessions",
       "schedule": "0 */6 * * *"
