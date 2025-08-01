@@ -5,6 +5,9 @@ import { getAuth } from 'firebase-admin/auth';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  // SECURITY: Allow in production for debugging premium access issues
+  // This endpoint only REMOVES premium claims, so it's safe for production use
+  
   const userId = request.nextUrl.searchParams.get('userId');
   
   if (!userId) {

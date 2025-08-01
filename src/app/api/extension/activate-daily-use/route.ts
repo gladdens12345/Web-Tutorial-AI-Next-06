@@ -111,7 +111,9 @@ export async function POST(request: NextRequest) {
       const premiumUserDoc = await adminDb.collection('premium_users').doc(userId).get();
       if (premiumUserDoc.exists()) {
         const premiumData = premiumUserDoc.data();
-        actualSubscriptionStatus = premiumData?.subscriptionStatus || 'premium';
+        // CRITICAL FIX: Default to 'limited', not 'premium'
+        // Only users with explicit 'premium' status should get premium access
+        actualSubscriptionStatus = premiumData?.subscriptionStatus || 'limited';
         console.log('✅ Found premium user, preserving status:', actualSubscriptionStatus);
         
         // Update premium_users collection instead

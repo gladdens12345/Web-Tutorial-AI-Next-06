@@ -103,10 +103,12 @@ export async function GET(request: NextRequest) {
     
     if (debugData.sources.premium_users?.exists) {
       authSource = 'premium_users';
-      authStatus = debugData.sources.premium_users.data?.subscriptionStatus || 'premium';
+      // CRITICAL FIX: Default to 'limited', not 'premium'
+      authStatus = debugData.sources.premium_users.data?.subscriptionStatus || 'limited';
     } else if (debugData.sources.premium_users_by_email?.exists) {
       authSource = 'premium_users_by_email';
-      authStatus = debugData.sources.premium_users_by_email.data?.subscriptionStatus || 'premium';
+      // CRITICAL FIX: Default to 'limited', not 'premium'  
+      authStatus = debugData.sources.premium_users_by_email.data?.subscriptionStatus || 'limited';
     } else if (debugData.sources.custom_claims?.claims && 
                (debugData.sources.custom_claims.claims.premium === true ||
                 debugData.sources.custom_claims.claims.stripeRole === 'premium' ||
