@@ -53,10 +53,12 @@ export class UserService {
         console.log('✅ Found user in premium_users collection - AUTHORITATIVE:', data?.userId, 'Status:', data?.subscriptionStatus);
         
         // Return immediately - premium_users collection is authoritative
+        // CRITICAL FIX: Default to 'limited', not 'premium'
+        // Only users with explicit 'premium' status should get premium access
         return {
           userId: data?.userId || userId,
           email: data?.email,
-          subscriptionStatus: data?.subscriptionStatus || 'premium',
+          subscriptionStatus: data?.subscriptionStatus || 'limited',
           stripeCustomerId: data?.stripeCustomerId,
           stripeSubscriptionId: data?.stripeSubscriptionId,
           subscriptionStartDate: data?.subscriptionStartDate?.toDate(),
@@ -159,10 +161,12 @@ export class UserService {
         const data = doc.data();
         console.log('✅ Found user by email in premium_users collection');
         
+        // CRITICAL FIX: Default to 'limited', not 'premium'
+        // Only users with explicit 'premium' status should get premium access
         return {
           userId: doc.id,
           email: data.email,
-          subscriptionStatus: data.subscriptionStatus || 'premium',
+          subscriptionStatus: data.subscriptionStatus || 'limited',
           stripeCustomerId: data.stripeCustomerId,
           stripeSubscriptionId: data.stripeSubscriptionId,
           subscriptionStartDate: data.subscriptionStartDate?.toDate(),
